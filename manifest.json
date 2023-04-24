@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Toggle Sidebar for OpenAI Chat",
+  "version": "1.0",
+  "description": "Toggle the visibility of the sidebar on chat.openai.com. And also some visual tweaks.",
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  },
+  "permissions": ["activeTab", "scripting"],
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://chat.openai.com/*"],
+      "js": ["content.js"]
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
+}
