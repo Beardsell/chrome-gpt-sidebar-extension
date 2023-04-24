@@ -1,0 +1,1 @@
+# chrome-gpt-sidebar-extension
