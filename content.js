@@ -1,5 +1,13 @@
-// Add a global variable to store the current state of visual changes
-let visualChangesEnabled = true;
+const visualChangesEnabledKey = "visualChangesEnabled";
+const defaultVisualChangesEnabled = true;
+
+chrome.storage.sync.get([visualChangesEnabledKey], (result) => {
+    const visualChangesEnabled = result.hasOwnProperty(visualChangesEnabledKey)
+        ? result[visualChangesEnabledKey]
+        : defaultVisualChangesEnabled;
+
+    onPageLoad(visualChangesEnabled);
+});
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.message === "toggleSidebar") {
@@ -12,22 +20,41 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 function toggleSidebar() {
     const navElement = document.querySelector("nav");
 
-    if (navElement) {
-        const sidebar = navElement.parentNode.parentNode.parentNode;
-        if (sidebar) {
-            sidebar.classList.toggle("md:flex");
-            sidebar.classList.toggle("md:w-[260px]");
-            sidebar.classList.toggle("md:flex-col");
-        }
+    if (!navElement) {
+        console.error("Nav element not found. Unable to toggle sidebar.");
+        return;
+    }
+
+    const sidebar = navElement.parentNode.parentNode.parentNode;
+    if (!sidebar) {
+        console.error("Sidebar not found. Unable to toggle sidebar.");
+        return;
+    }
+
+    sidebar.classList.toggle("md:flex");
+    sidebar.classList.toggle("md:w-[260px]");
+    sidebar.classList.toggle("md:flex-col");
+}
+
+function editElementClasses(element, addClasses) {
+    const oldClasses = ["md:max-w-2xl", "lg:max-w-xl", "xl:max-w-3xl"];
+    const newClasses = ["md:w-11/12", "lg:w-11/12", "xl:w-11/12"];
+
+    if (addClasses) {
+        element.classList.remove(...oldClasses);
+        element.classList.add(...newClasses);
+    } else {
+        element.classList.remove(...newClasses);
+        element.classList.add(...oldClasses);
     }
 }
 
-function editElementClasses(element) {
-    // Remove the old classes
-    element.classList.remove("md:max-w-2xl", "lg:max-w-xl", "xl:max-w-3xl");
-
-    // Add the new classes
-    element.classList.add("md:w-11/12", "lg:w-11/12", "xl:w-11/12");
+function debounce(func, wait) {
+    let timeout;
+    return function (...args) {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(this, args), wait);
+    };
 }
 
 const elementClassList = [
@@ -48,15 +75,10 @@ const classSelector = elementClassList
     .map((className) => "." + className.replace(":", "\\:"))
     .join("");
 
-function onPageLoad() {
-    // Edit classes for existing elements on page load
-    document.querySelectorAll(classSelector).forEach((element) => {
-        editElementClasses(element);
-    });
+function onPageLoad(visualChangesEnabled) {
+    applyVisualChanges(document, visualChangesEnabled);
 
-    // Set up the MutationObserver to watch for new elements
     const targetNode = document.body;
-
     const observerConfig = {
         childList: true,
         subtree: true,
@@ -64,49 +86,70 @@ function onPageLoad() {
         characterData: false,
     };
 
-    const observerCallback = (mutationsList) => {
+    const observerCallback = debounce((mutationsList) => {
         for (const mutation of mutationsList) {
             if (mutation.type === "childList") {
                 mutation.addedNodes.forEach((node) => {
                     if (node.nodeType === Node.ELEMENT_NODE) {
-                        if (node.matches(classSelector)) {
-                            editElementClasses(node);
-                        }
-
-                        node.querySelectorAll(classSelector).forEach((element) => {
-                            editElementClasses(element);
-                        });
+                        applyVisualChanges(node, visualChangesEnabled);
                     }
                 });
             }
         }
-    };
+    }, 100);
 
     const observer = new MutationObserver(observerCallback);
     observer.observe(targetNode, observerConfig);
 }
 
-if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", onPageLoad);
-} else {
-    onPageLoad();
+function applyVisualChanges(node, visualChangesEnabled) {
+    if (node.matches(createClassSelector(elementClassList))) {
+        editElementClasses(node, visualChangesEnabled);
+    }
+    node.querySelectorAll(createClassSelector(elementClassList)).forEach((element) => {
+        editElementClasses(element, visualChangesEnabled);
+    });
+}
+
+function createClassSelector(classList) {
+    return classList
+      .map((className) => "." + className.replace(":", "\\:").replace("/", "\\/"))
+      .join(", ");
+}
+
+function applyVisualChanges(visualChangesEnabled) {
+    const oldClassesSelector = createClassSelector(["md:max-w-2xl", "lg:max-w-xl", "xl:max-w-3xl"]);
+    const newClassesSelector = createClassSelector(["md:w-11/12", "lg:w-11/12", "xl:w-11/12"]);
+
+    document.querySelectorAll(`${oldClassesSelector}, ${newClassesSelector}`).forEach((element) => {
+        editElementClasses(element, visualChangesEnabled);
+    });
+}
+
+function applyVisualChangesToNode(node, visualChangesEnabled) {
+    if (node.matches(classSelector)) {
+        editElementClasses(node, visualChangesEnabled);
+    }
+
+    node.querySelectorAll(classSelector).forEach((element) => {
+        editElementClasses(element, visualChangesEnabled);
+    });
 }
 
 function toggleVisualChanges() {
-    visualChangesEnabled = !visualChangesEnabled;
+    chrome.storage.sync.get([visualChangesEnabledKey], (result) => {
+        const visualChangesEnabled = result.hasOwnProperty(visualChangesEnabledKey)
+            ? result[visualChangesEnabledKey]
+            : defaultVisualChangesEnabled;
 
-    if (visualChangesEnabled) {
-        // Apply the visual changes
-        document.querySelectorAll(classSelector).forEach((element) => {
-            editElementClasses(element);
+        const newVisualChangesEnabled = !visualChangesEnabled;
+
+        // Save the new visual changes state
+        chrome.storage.sync.set({ [visualChangesEnabledKey]: newVisualChangesEnabled }, () => {
+            console.log("Visual changes state updated:", newVisualChangesEnabled);
         });
-    } else {
-        // Revert the visual changes
-        document
-            .querySelectorAll(".md\\:w-11\\/12.lg\\:w-11\\/12.xl\\:w-11\\/12")
-            .forEach((element) => {
-                element.classList.add("md:max-w-2xl", "lg:max-w-xl", "xl:max-w-3xl");
-                element.classList.remove("md:w-11/12", "lg:w-11/12", "xl:w-11/12");
-            });
-    }
+
+        // Apply or revert the visual changes based on the new state
+        applyVisualChanges(newVisualChangesEnabled);
+    });
 }
